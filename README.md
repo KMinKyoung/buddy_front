@@ -1,16 +1,17 @@
-# buddyfront
+## 해야할 일
+- 시작 시 바로 로그인 또는 회원가입
+- 메인화면
+- 푸터와 헤더 따로 빼놓고 Route로 페이지 이동 만들기(이동시 스택 제거)
+- 페이지 만들기(상점, 피팅룸, SNS, 게시글 확인, 채팅방(내부, 외부),프로필)
+- 앱 로고 만들기
 
-A new Flutter project.
+## 진행 상황
+- 백엔드 서버와 연동 완료
+- flutter_native_splash를 이용한 로딩화면 구성(아이콘 사이즈가 안맞음)
 
-## Getting Started
-
-This project is a starting point for a Flutter application.
-
-A few resources to get you started if this is your first Flutter project:
-
-- [Lab: Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
-- [Cookbook: Useful Flutter samples](https://docs.flutter.dev/cookbook)
-
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev/), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
+## 우선 순위
+1. 페이지 틀만 간단하게 만들어 놓기(게시글, 채팅방, 프로필, sns, 상점(피팅룸))
+2. Route 페이지 이동 확인 -> 수
+3. 푸터와 헤더 따로 빼놔서 각 페이지에 넣어놓기 -> 수
+4. 페이지 제대로 만들기 -> 목,금
+5. 다시 백엔드 작업 진행(웹소켓 기능 완료 후 프론트 배포)
