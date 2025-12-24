@@ -106,7 +106,6 @@ class _LoginScreenState extends State<LoginScreen> {
                         mainAxisSize: MainAxisSize.min,
                         crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
-                          // ✅ Buddy + 문구 가운데
                           Align(
                             alignment: Alignment.center,
                             child: Column(

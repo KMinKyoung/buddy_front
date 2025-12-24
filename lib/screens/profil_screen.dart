@@ -10,7 +10,8 @@ class ProfilScreen extends StatefulWidget {
 }
 
 class _ProfilScreenState extends State<ProfilScreen> {
-  static const Color _primaryPink = Color(0xFFFFE8E8);
+
+
   bool _loading = true;
   bool _isLoggedIn = false;
 
@@ -21,9 +22,7 @@ class _ProfilScreenState extends State<ProfilScreen> {
   }
 
   Future<void> _checkLogin() async {
-    setState(() {
-      _loading = true;
-    });
+    setState(() => _loading = true);
 
     final token = await TokenStorage.readAccessToken();
 
@@ -43,7 +42,7 @@ class _ProfilScreenState extends State<ProfilScreen> {
   }
 
   Future<void> _goLogin(BuildContext context) async {
-    //  로그인 화면으로 이동 후 돌아오면 다시 로그인 상태 체크
+    // 로그인 화면으로 이동 후 돌아오면 다시 로그인 상태 체크
     await Navigator.pushNamed(context, AppRoutes.login);
     await _checkLogin();
   }
@@ -88,7 +87,11 @@ class _ProfilScreenState extends State<ProfilScreen> {
                   Text(
                     '프로필/내 글/내 댓글/좋아요를 보려면\n로그인 해주세요.',
                     textAlign: TextAlign.center,
-                    style: TextStyle(fontSize: 13, color: Colors.grey.shade700, height: 1.3),
+                    style: TextStyle(
+                      fontSize: 13,
+                      color: Colors.grey.shade700,
+                      height: 1.3,
+                    ),
                   ),
                   const SizedBox(height: 16),
                   SizedBox(
@@ -97,7 +100,7 @@ class _ProfilScreenState extends State<ProfilScreen> {
                     child: ElevatedButton(
                       onPressed: () => _goLogin(context),
                       style: ElevatedButton.styleFrom(
-                        backgroundColor: _primaryPink,
+                        backgroundColor: Colors.white,
                         foregroundColor: Colors.black,
                         elevation: 0,
                         shape: RoundedRectangleBorder(
@@ -109,7 +112,6 @@ class _ProfilScreenState extends State<ProfilScreen> {
                     ),
                   ),
                   const SizedBox(height: 8),
-
                 ],
               ),
             ),
@@ -118,15 +120,52 @@ class _ProfilScreenState extends State<ProfilScreen> {
       );
     }
 
-    // 로그인 된 경우: 기존 프로필 화면 그대로
-    return _ProfileAuthedView(goMain: _goMain);
+    // 로그인 된 경우
+    return _ProfileAuthedView(
+      goMain: _goMain,
+      primaryPink: Colors.white,
+      onLoggedOut: () async {
+        // 로그아웃 후 이 StatefulWidget도 즉시 상태 반영
+        await _checkLogin();
+      },
+    );
   }
 }
 
+//  로그인된 프로필 화면
+
+enum _ProfileMenu { settings, logout }
+
 class _ProfileAuthedView extends StatelessWidget {
   final void Function(BuildContext context) goMain;
+  final Color primaryPink;
+  final Future<void> Function() onLoggedOut;
 
-  const _ProfileAuthedView({required this.goMain});
+  const _ProfileAuthedView({
+    required this.goMain,
+    required this.primaryPink,
+    required this.onLoggedOut,
+  });
+
+  Future<void> _logout(BuildContext context) async {
+    await TokenStorage.deleteAccessToken();
+
+    if (context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('로그아웃 되었습니다.')),
+      );
+    }
+
+    if (context.mounted) {
+      Navigator.pushNamedAndRemoveUntil(
+        context,
+        AppRoutes.main,
+            (route) => false,
+      );
+    }
+
+    await onLoggedOut();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -156,13 +195,46 @@ class _ProfileAuthedView extends StatelessWidget {
           backgroundColor: Colors.white,
           appBar: AppBar(
             title: const Text('내 프로필', style: TextStyle(color: Colors.black)),
-            backgroundColor: Colors.white,
+            backgroundColor: primaryPink,
             foregroundColor: Colors.black,
             elevation: 0,
+
+            actions: [
+              PopupMenuButton<_ProfileMenu>(
+                icon: const Icon(Icons.more_horiz),
+                onSelected: (value) async {
+                  switch (value) {
+                    case _ProfileMenu.settings:
+                    // 나중에 설정 페이지 만들면 여기 연결
+                      if (context.mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(content: Text('설정은 다음 업데이트 예정입니다.')),
+                        );
+                      }
+                      break;
+                    case _ProfileMenu.logout:
+                      await _logout(context);
+                      break;
+                  }
+                },
+                itemBuilder: (context) => const [
+                  PopupMenuItem(
+                    value: _ProfileMenu.settings,
+                    child: Text('설정(추후)'),
+                  ),
+                  PopupMenuItem(
+                    value: _ProfileMenu.logout,
+                    child: Text('로그아웃'),
+                  ),
+                ],
+              ),
+              const SizedBox(width: 6),
+            ],
           ),
           body: Column(
             children: [
               const Divider(height: 1, thickness: 1),
+
               Padding(
                 padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
                 child: Row(
@@ -189,6 +261,7 @@ class _ProfileAuthedView extends StatelessWidget {
                   ],
                 ),
               ),
+
               const Divider(height: 1, thickness: 1),
               const TabBar(
                 labelColor: Colors.black,
@@ -201,6 +274,7 @@ class _ProfileAuthedView extends StatelessWidget {
                 ],
               ),
               const Divider(height: 1, thickness: 1),
+
               Expanded(
                 child: TabBarView(
                   children: [

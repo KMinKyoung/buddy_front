@@ -1,3 +1,6 @@
+import 'package:buddyfront/app/app_navigator.dart';
+import 'package:buddyfront/network/dio_client.dart';
+import 'package:buddyfront/screens/edit_post_screen.dart';
 import 'package:buddyfront/screens/main_shell.dart';
 import 'package:buddyfront/screens/profil_screen.dart';
 import 'package:buddyfront/screens/signup_screen.dart';
@@ -15,12 +18,16 @@ import 'screens/login_screen.dart';
 import 'screens/sns_screen.dart';
 import 'screens/createpost_screen.dart';
 
+import 'routes/app_routes.dart';
+import 'app/app_navigator.dart';
+
 
 //부팅 담당 페이지로 디자인 구성 없이 앱 구동시 필요한것만 넣어놓을 예정
 void main() {
+
   WidgetsBinding widgetsBinding =WidgetsFlutterBinding.ensureInitialized();
   FlutterNativeSplash.preserve(widgetsBinding: widgetsBinding);
-
+  DioClient.init();
 
   runApp(const MyApp()); //앱 구동을 위한 부분(메인페이지가 구동됨)
 
@@ -30,14 +37,16 @@ void main() {
 }
 
 
-
 class MyApp extends StatelessWidget {
+
   //초반 세팅 문법
   const MyApp({super.key});
+
 
   @override
   Widget build(BuildContext context) {
     return MaterialApp( //디자인 넣는 부분
+      navigatorKey:  navigatorKey,
       initialRoute: AppRoutes.main,
       routes: {
         AppRoutes.main: (_) => const MainShell(),
@@ -52,6 +61,7 @@ class MyApp extends StatelessWidget {
         AppRoutes.postCreate: (_) => const CreatePostScreen(),
         AppRoutes.signup: (_) => const SignupScreen(),
         AppRoutes.login: (_) => const LoginScreen(),
+        AppRoutes.postEdit: (_) => const EditPostScreen(),
       },
     );
   }

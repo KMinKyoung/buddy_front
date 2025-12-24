@@ -10,5 +10,6 @@ class AppRoutes{
   static const main = '/main';
   static const postCreate = '/create';
   static const signup = '/signup';
+  static const postEdit = '/post/edit';
 }
 

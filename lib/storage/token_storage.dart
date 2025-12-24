@@ -17,4 +17,9 @@ class TokenStorage {
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove(_accessTokenKey);
   }
+
+  static Future<void> deleteAccessToken() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove(_accessTokenKey);
+  }
 }
