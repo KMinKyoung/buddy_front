@@ -6,7 +6,7 @@ class AppRoutes{
   static const login = '/login';
   static const store = '/store'; //상점
   static const chat = '/chat'; //채팅방들 볼 수 있음
-  static const profil = '/profil';
+  static const profile = '/profile';
   static const main = '/main';
   static const postCreate = '/create';
   static const signup = '/signup';

@@ -1,6 +1,6 @@
 import 'package:buddyfront/screens/chat_screen.dart';
 import 'package:buddyfront/screens/home_screen.dart';
-import 'package:buddyfront/screens/profil_screen.dart';
+import 'package:buddyfront/screens/profile_screen.dart';
 import 'package:buddyfront/screens/store_screen.dart';
 import 'package:flutter/material.dart';
 import '../components/bottomnav.dart';
@@ -22,7 +22,7 @@ class _MainShellState extends State<MainShell> {
     HomeScreen(), //메인
     ChatScreen(), //채팅방
     StoreScreen(), //상점
-    ProfilScreen(), //내 프로필
+    ProfileScreen(), //내 프로필
   ];
 
   @override

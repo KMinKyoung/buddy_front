@@ -2,7 +2,7 @@ import 'package:buddyfront/app/app_navigator.dart';
 import 'package:buddyfront/network/dio_client.dart';
 import 'package:buddyfront/screens/edit_post_screen.dart';
 import 'package:buddyfront/screens/main_shell.dart';
-import 'package:buddyfront/screens/profil_screen.dart';
+import 'package:buddyfront/screens/profile_screen.dart';
 import 'package:buddyfront/screens/signup_screen.dart';
 
 import 'screens/chat_screen.dart';
@@ -51,7 +51,7 @@ class MyApp extends StatelessWidget {
       routes: {
         AppRoutes.main: (_) => const MainShell(),
         AppRoutes.sns: (_) => const SnsScreen(), //post 글들
-        AppRoutes.profil: (_) => const ProfilScreen(), //내 정보
+        AppRoutes.profile: (_) => const ProfileScreen(), //내 정보
         AppRoutes.home: (_) => const HomeScreen(), //메인 페이지
         AppRoutes.store: (_) => const StoreScreen(), //상점
         AppRoutes.chat: (_) => const ChatScreen(), //채팅방
