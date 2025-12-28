@@ -58,7 +58,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
       );
     }
 
-    // 로그인 안 된 경우
     if (!_isLoggedIn) {
       return WillPopScope(
         onWillPop: () async {
@@ -121,7 +120,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
       );
     }
 
-    // 로그인 된 경우
     return _ProfileAuthedView(
       goMain: _goMain,
       primaryPink: Colors.white,
@@ -150,17 +148,19 @@ class _ProfileAuthedView extends StatefulWidget {
 class _ProfileAuthedViewState extends State<_ProfileAuthedView> {
   late final Dio _dio;
 
+
   bool _postsLoading = true;
   String? _postsError;
-
-  /// MyPostResponseDto 기준:
-  /// id, user_id, name, title, description, image_url, createdAt, updatedAt
   List<Map<String, dynamic>> _myPosts = [];
-
   int _page = 0;
   final int _size = 20;
 
-  // 내 userId (토큰에서 추출) -> 수정/삭제 노출 판단용
+
+  bool _commentsLoading = true;
+  String? _commentsError;
+  List<Map<String, dynamic>> _myComments = [];
+
+
   int? _myUserId;
 
   @override
@@ -173,26 +173,41 @@ class _ProfileAuthedViewState extends State<_ProfileAuthedView> {
       receiveTimeout: const Duration(seconds: 20),
     ));
 
+    _dio.interceptors.add(LogInterceptor(
+      request: true,
+      requestBody: true,
+      responseBody: true,
+      error: true,
+    ));
+
     _loadMyUserIdFromToken();
+
     _loadMyPosts(reset: true);
+    _loadMyComments(reset: true);
   }
 
 
-  Future<void> _logout(BuildContext context) async {
+  Future<Options> _authOptions() async {
+    final token = await TokenStorage.readAccessToken();
+    return Options(headers: {
+      'Authorization': token != null ? 'Bearer $token' : null,
+      'Accept': 'application/json',
+    });
+  }
+
+  Future<void> _handleAuthExpired() async {
     await TokenStorage.deleteAccessToken();
+    if (!mounted) return;
 
-    if (context.mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('로그아웃 되었습니다.')),
-      );
-      Navigator.pushNamedAndRemoveUntil(
-        context,
-        AppRoutes.main,
-            (route) => false,
-      );
-    }
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('로그인이 만료되었습니다. 다시 로그인해주세요.')),
+    );
 
-    await widget.onLoggedOut();
+    Navigator.pushNamedAndRemoveUntil(
+      context,
+      AppRoutes.login,
+          (route) => false,
+    );
   }
 
 
@@ -215,12 +230,9 @@ class _ProfileAuthedViewState extends State<_ProfileAuthedView> {
           payload['user_id'];
 
       final parsed = (uid is int) ? uid : int.tryParse(uid?.toString() ?? '');
-
       if (!mounted) return;
       setState(() => _myUserId = parsed);
-    } catch (_) {
-      // 실패해도 앱은 돌아가게
-    }
+    } catch (_) {}
   }
 
   int? _toInt(dynamic v) {
@@ -232,6 +244,14 @@ class _ProfileAuthedViewState extends State<_ProfileAuthedView> {
   bool _isMyPost(Map<String, dynamic> p) {
     if (_myUserId == null) return false;
     final raw = p['user_id'] ?? p['userId'] ?? p['userID'];
+    final authorId = _toInt(raw);
+    if (authorId == null) return false;
+    return _myUserId == authorId;
+  }
+
+  bool _isMyComment(Map<String, dynamic> c) {
+    if (_myUserId == null) return false;
+    final raw = c['user_id'] ?? c['userId'] ?? c['userID'];
     final authorId = _toInt(raw);
     if (authorId == null) return false;
     return _myUserId == authorId;
@@ -257,6 +277,9 @@ class _ProfileAuthedViewState extends State<_ProfileAuthedView> {
 
       final posts = data['posts'];
       if (posts is List) return posts;
+
+      final comments = data['comments'];
+      if (comments is List) return comments;
     }
 
     return null;
@@ -273,6 +296,27 @@ class _ProfileAuthedViewState extends State<_ProfileAuthedView> {
       }
     }
     return raw;
+  }
+
+  String? _pickAnyString(Map<String, dynamic> root, List<List<String>> paths) {
+    for (final path in paths) {
+      dynamic cur = root;
+      bool ok = true;
+
+      for (final key in path) {
+        if (cur is Map && cur.containsKey(key)) {
+          cur = cur[key];
+        } else {
+          ok = false;
+          break;
+        }
+      }
+
+      if (!ok || cur == null) continue;
+      final s = cur.toString();
+      if (s.isNotEmpty) return s;
+    }
+    return null;
   }
 
 
@@ -315,6 +359,24 @@ class _ProfileAuthedViewState extends State<_ProfileAuthedView> {
   }
 
 
+  Future<void> _logout(BuildContext context) async {
+    await TokenStorage.deleteAccessToken();
+
+    if (context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('로그아웃 되었습니다.')),
+      );
+      Navigator.pushNamedAndRemoveUntil(
+        context,
+        AppRoutes.main,
+            (route) => false,
+      );
+    }
+
+    await widget.onLoggedOut();
+  }
+
+
   Future<void> _loadMyPosts({required bool reset}) async {
     if (reset) {
       setState(() {
@@ -343,17 +405,10 @@ class _ProfileAuthedViewState extends State<_ProfileAuthedView> {
           'size': _size,
           'sort': 'createdAt,desc',
         },
-        options: Options(
-          headers: {
-            'Authorization': 'Bearer $token',
-            'Accept': 'application/json',
-          },
-          responseType: ResponseType.plain,
-        ),
+        options: (await _authOptions()).copyWith(responseType: ResponseType.plain),
       );
 
       final parsed = _parseMaybeJson(res.data);
-
       if (parsed is! Map<String, dynamic> && parsed is! List) {
         throw Exception('응답 형식이 JSON이 아닙니다: ${parsed.toString()}');
       }
@@ -368,7 +423,7 @@ class _ProfileAuthedViewState extends State<_ProfileAuthedView> {
           'user_id': m['user_id'] ?? m['userId'],
           'name': m['name'],
           'title': m['title'],
-          'description': m['description'],
+          'description': m['description'] ?? m['content'],
           'image_url': m['image_url'] ?? m['imageUrl'] ?? m['imgUrl'],
           'createdAt': m['createdAt'] ?? m['created_at'],
           'updatedAt': m['updatedAt'] ?? m['updated_at'],
@@ -384,8 +439,13 @@ class _ProfileAuthedViewState extends State<_ProfileAuthedView> {
     } on DioException catch (e) {
       final code = e.response?.statusCode;
       final msg = e.response?.data?.toString() ?? e.message ?? '요청 실패';
-
       if (!mounted) return;
+
+      if (code == 401) {
+        await _handleAuthExpired();
+        return;
+      }
+
       setState(() {
         _postsError = '내 글 조회 실패 (status: $code)\n$msg';
         _postsLoading = false;
@@ -399,21 +459,13 @@ class _ProfileAuthedViewState extends State<_ProfileAuthedView> {
     }
   }
 
-
-  Future<Options> _authOptions() async {
-    final token = await TokenStorage.readAccessToken();
-    return Options(headers: {
-      'Authorization': token != null ? 'Bearer $token' : null,
-    });
-  }
-
   Future<void> _goEditPost(BuildContext context, dynamic id) async {
     if (id == null) return;
 
     final result = await Navigator.pushNamed(
       context,
       AppRoutes.postEdit,
-      arguments: id,
+      arguments: id.toString(),
     );
 
     if (result == true) {
@@ -430,14 +482,8 @@ class _ProfileAuthedViewState extends State<_ProfileAuthedView> {
         title: const Text('게시글 삭제'),
         content: const Text('정말 삭제하시겠어요?'),
         actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('취소'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(context, true),
-            child: const Text('삭제'),
-          ),
+          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('취소')),
+          TextButton(onPressed: () => Navigator.pop(context, true), child: const Text('삭제')),
         ],
       ),
     );
@@ -447,7 +493,6 @@ class _ProfileAuthedViewState extends State<_ProfileAuthedView> {
     try {
       await _dio.delete('/api/posts/$id', options: await _authOptions());
 
-      // 화면에서 즉시 제거
       setState(() {
         _myPosts.removeWhere((e) => (e['id']?.toString() ?? '') == id.toString());
       });
@@ -457,19 +502,299 @@ class _ProfileAuthedViewState extends State<_ProfileAuthedView> {
           const SnackBar(content: Text('삭제되었습니다.')),
         );
       }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('삭제 실패: $e')),
-        );
+    } on DioException catch (e) {
+      final code = e.response?.statusCode;
+      if (code == 401) {
+        await _handleAuthExpired();
+        return;
       }
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('삭제 실패(status=$code): ${e.response?.data}')),
+      );
+    }
+  }
+
+
+  Future<void> _loadMyComments({required bool reset}) async {
+    if (reset) {
+      setState(() {
+        _commentsLoading = true;
+        _commentsError = null;
+        _myComments = [];
+      });
+    } else {
+      setState(() {
+        _commentsLoading = true;
+        _commentsError = null;
+      });
+    }
+
+    try {
+      final token = await TokenStorage.readAccessToken();
+      if (token == null || token.isEmpty) {
+        throw Exception('토큰이 없습니다. 다시 로그인 해주세요.');
+      }
+
+      final res = await _dio.get(
+        '/user/comments',
+        options: (await _authOptions()).copyWith(responseType: ResponseType.plain),
+      );
+
+      final parsed = _parseMaybeJson(res.data);
+      if (parsed is! Map<String, dynamic> && parsed is! List) {
+        throw Exception('응답 형식이 JSON이 아닙니다: ${parsed.toString()}');
+      }
+
+      final rawList = _extractList(parsed) ?? <dynamic>[];
+
+      final mapped = rawList.map<Map<String, dynamic>>((e) {
+        final m = (e is Map<String, dynamic>) ? e : <String, dynamic>{};
+
+        final commentId = _pickAnyString(m, [
+          ['id'],
+          ['commentId'],
+          ['commentsId'],
+          ['comment_id'],
+        ]) ??
+            '';
+
+        final postId = _pickAnyString(m, [
+          ['postId'],
+          ['post_id'],
+          ['post', 'id'],
+          ['post', 'postId'],
+        ]) ??
+            '';
+
+        final content = _pickAnyString(m, [
+          ['description'],
+          ['content'],
+          ['comment'],
+          ['text'],
+          ['body'],
+          ['message'],
+        ]) ??
+            '';
+
+        final createdAt = (m['createdAt'] ?? m['created_at'] ?? '').toString();
+
+        final writerId = _pickAnyString(m, [
+          ['user_id'],
+          ['userId'],
+          ['user', 'id'],
+          ['writerId'],
+        ]);
+
+        final writerName = _pickAnyString(m, [
+          ['writerName'],
+          ['name'],
+          ['userName'],
+          ['user', 'name'],
+        ]);
+
+        final postTitle = _pickAnyString(m, [
+          ['postTitle'],
+          ['title'],
+          ['post', 'title'],
+        ]);
+
+        return {
+          'id': commentId,
+          'post_id': postId,
+          'user_id': writerId,
+          'writerName': writerName,
+          'postTitle': postTitle,
+          'content': content,
+          'createdAt': createdAt,
+          'raw': m,
+        };
+      }).toList();
+
+      if (!mounted) return;
+      setState(() {
+        _myComments = mapped;
+        _commentsLoading = false;
+        _commentsError = null;
+      });
+    } on DioException catch (e) {
+      final code = e.response?.statusCode;
+      final msg = e.response?.data?.toString() ?? e.message ?? '요청 실패';
+
+      if (code == 401) {
+        await _handleAuthExpired();
+        return;
+      }
+
+      if (!mounted) return;
+      setState(() {
+        _commentsError = '내 댓글 조회 실패 (status: $code)\n$msg';
+        _commentsLoading = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _commentsError = e.toString();
+        _commentsLoading = false;
+      });
+    }
+  }
+
+  Future<void> _editCommentDialog(Map<String, dynamic> c) async {
+    final commentId = (c['id'] ?? '').toString();
+    final postId = (c['post_id'] ?? '').toString();
+    final oldText = (c['content'] ?? '').toString();
+
+    if (commentId.isEmpty || postId.isEmpty) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('댓글/게시글 ID를 찾지 못했어요.')),
+      );
+      return;
+    }
+
+    final ctrl = TextEditingController(text: oldText);
+
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('댓글 수정'),
+        content: TextField(
+          controller: ctrl,
+          minLines: 2,
+          maxLines: 5,
+          decoration: const InputDecoration(hintText: '댓글 내용을 입력하세요'),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('취소')),
+          TextButton(onPressed: () => Navigator.pop(context, true), child: const Text('저장')),
+        ],
+      ),
+    ) ??
+        false;
+
+    if (!ok) return;
+
+    final newText = ctrl.text.trim();
+    if (newText.isEmpty) return;
+
+    await _updateComment(postId: postId, commentId: commentId, text: newText);
+  }
+
+  Future<void> _updateComment({
+    required String postId,
+    required String commentId,
+    required String text,
+  }) async {
+    try {
+      final path = '/api/posts/$postId/comments/$commentId'; // ✅ post_detail.dart 방식
+
+      await _dio.put(
+        path,
+        data: {
+          'description': text,
+          'content': text,
+        },
+        options: await _authOptions(),
+      );
+
+      // 화면 즉시 반영
+      setState(() {
+        final idx = _myComments.indexWhere((e) => (e['id'] ?? '') == commentId);
+        if (idx != -1) _myComments[idx]['content'] = text;
+      });
+
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('수정되었습니다.')),
+      );
+    } on DioException catch (e) {
+      final code = e.response?.statusCode;
+
+      if (code == 401) {
+        await _handleAuthExpired();
+        return;
+      }
+      if (code == 403) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('권한이 없습니다. 내 댓글만 수정할 수 있어요.')),
+        );
+        return;
+      }
+
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('댓글 수정 실패(status=$code): ${e.response?.data}')),
+      );
+    }
+  }
+
+  Future<void> _deleteComment({
+    required String postId,
+    required String commentId,
+  }) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('댓글 삭제'),
+        content: const Text('삭제하면 되돌릴 수 없습니다.'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('취소')),
+          TextButton(onPressed: () => Navigator.pop(context, true), child: const Text('삭제')),
+        ],
+      ),
+    ) ??
+        false;
+
+    if (!ok) return;
+
+    try {
+      final primaryPath = '/api/posts/$postId/comments/$commentId';
+      try {
+        await _dio.delete(primaryPath, options: await _authOptions());
+      } on DioException catch (e) {
+        // 혹시 서버가 /api/comments/{id} 형태면 fallback
+        if (e.response?.statusCode == 404) {
+          await _dio.delete('/api/comments/$commentId', options: await _authOptions());
+        } else {
+          rethrow;
+        }
+      }
+
+      setState(() {
+        _myComments.removeWhere((e) => (e['id'] ?? '') == commentId);
+      });
+
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('삭제되었습니다.')),
+      );
+    } on DioException catch (e) {
+      final code = e.response?.statusCode;
+
+      if (code == 401) {
+        await _handleAuthExpired();
+        return;
+      }
+      if (code == 403) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('권한이 없습니다. 내 댓글만 삭제할 수 있어요.')),
+        );
+        return;
+      }
+
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('댓글 삭제 실패(status=$code): ${e.response?.data}')),
+      );
     }
   }
 
 
   @override
   Widget build(BuildContext context) {
-    final myComments = <Map<String, dynamic>>[];
     final likedPosts = <Map<String, dynamic>>[];
 
     return WillPopScope(
@@ -504,14 +829,8 @@ class _ProfileAuthedViewState extends State<_ProfileAuthedView> {
                   }
                 },
                 itemBuilder: (context) => const [
-                  PopupMenuItem(
-                    value: _ProfileMenu.settings,
-                    child: Text('설정(추후)'),
-                  ),
-                  PopupMenuItem(
-                    value: _ProfileMenu.logout,
-                    child: Text('로그아웃'),
-                  ),
+                  PopupMenuItem(value: _ProfileMenu.settings, child: Text('설정(추후)')),
+                  PopupMenuItem(value: _ProfileMenu.logout, child: Text('로그아웃')),
                 ],
               ),
               const SizedBox(width: 6),
@@ -561,6 +880,7 @@ class _ProfileAuthedViewState extends State<_ProfileAuthedView> {
               Expanded(
                 child: TabBarView(
                   children: [
+                    // 내 글
                     _MyPostsFeedTab(
                       loading: _postsLoading,
                       error: _postsError,
@@ -568,27 +888,37 @@ class _ProfileAuthedViewState extends State<_ProfileAuthedView> {
                       onRefresh: () => _loadMyPosts(reset: true),
                       dateOnly: _dateOnly,
                       resolveImageUrl: _resolvePostImageUrl,
-
-                      // 상세 진입
                       onTapItem: (id) {
                         if (id == null) return;
                         Navigator.pushNamed(context, AppRoutes.postDetail, arguments: id);
                       },
-
-                      // 내 글이면 수정/삭제 노출 + 연동
                       isMine: (post) => _isMyPost(post),
                       onEdit: (id) => _goEditPost(context, id),
                       onDelete: (id) => _deletePost(context, id),
                     ),
 
-                    _SimplePostList(
-                      items: myComments,
-                      emptyText: '작성한 댓글이 없습니다.',
-                      onTap: (postId) {
+                    // 내 댓글
+                    _MyCommentsTab(
+                      loading: _commentsLoading,
+                      error: _commentsError,
+                      items: _myComments,
+                      dateOnly: _dateOnly,
+                      onRefresh: () => _loadMyComments(reset: true),
+                      isMine: (c) => _isMyComment(c),
+                      onTapGoPost: (postId) {
+                        if (postId == null) return;
                         Navigator.pushNamed(context, AppRoutes.postDetail, arguments: postId);
+                      },
+                      onEdit: (c) => _editCommentDialog(c),
+                      onDelete: (c) {
+                        final commentId = (c['id'] ?? '').toString();
+                        final postId = (c['post_id'] ?? '').toString();
+                        if (commentId.isEmpty || postId.isEmpty) return;
+                        _deleteComment(postId: postId, commentId: commentId);
                       },
                     ),
 
+                    // ---------- 좋아요 (더미) ----------
                     _SimplePostList(
                       items: likedPosts,
                       emptyText: '좋아요한 글이 없습니다.',
@@ -608,7 +938,6 @@ class _ProfileAuthedViewState extends State<_ProfileAuthedView> {
 }
 
 
-
 class _MyPostsFeedTab extends StatelessWidget {
   final bool loading;
   final String? error;
@@ -620,7 +949,6 @@ class _MyPostsFeedTab extends StatelessWidget {
 
   final void Function(dynamic id) onTapItem;
 
-  // 수정/삭제 연동용
   final bool Function(Map<String, dynamic> post) isMine;
   final void Function(dynamic id) onEdit;
   final void Function(dynamic id) onDelete;
@@ -653,10 +981,7 @@ class _MyPostsFeedTab extends StatelessWidget {
             SizedBox(
               width: double.infinity,
               height: 44,
-              child: ElevatedButton(
-                onPressed: onRefresh,
-                child: const Text('다시 시도'),
-              ),
+              child: ElevatedButton(onPressed: onRefresh, child: const Text('다시 시도')),
             ),
           ],
         ),
@@ -694,9 +1019,7 @@ class _MyPostsFeedTab extends StatelessWidget {
             content: desc,
             imageUrl: imageUrl,
             onTapItem: () => onTapItem(id),
-            onTapLike: () {
-
-            },
+            onTapLike: () {},
             onTapChat: () {
               if (id != null) onTapItem(id);
             },
@@ -716,8 +1039,6 @@ class _MyPostsFeedTab extends StatelessWidget {
                         },
                       ),
                       const Divider(height: 1),
-
-                      // 내 글일 때만 수정/삭제
                       if (mine) ...[
                         ListTile(
                           leading: const Icon(Icons.edit),
@@ -737,7 +1058,6 @@ class _MyPostsFeedTab extends StatelessWidget {
                         ),
                         const Divider(height: 1),
                       ],
-
                       ListTile(
                         leading: const Icon(Icons.report),
                         title: const Text('신고'),
@@ -805,38 +1125,20 @@ class _FeedPostItem extends StatelessWidget {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(
-                          nickname,
-                          style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700),
-                        ),
+                        Text(nickname, style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700)),
                         if (createdAt.isNotEmpty)
-                          Text(
-                            createdAt,
-                            style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
-                          ),
+                          Text(createdAt, style: TextStyle(fontSize: 12, color: Colors.grey.shade600)),
                       ],
                     ),
                   ),
                 ],
               ),
               const SizedBox(height: 10),
-
               if (title.trim().isNotEmpty)
-                Text(
-                  title,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w800),
-                ),
+                Text(title, maxLines: 1, overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w800)),
               if (title.trim().isNotEmpty) const SizedBox(height: 6),
-
-              Text(
-                content,
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(fontSize: 14),
-              ),
-
+              Text(content, maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 14)),
               if (hasImage) ...[
                 const SizedBox(height: 10),
                 ClipRRect(
@@ -865,26 +1167,13 @@ class _FeedPostItem extends StatelessWidget {
                   ),
                 ),
               ],
-
               const SizedBox(height: 6),
               Row(
                 children: [
-                  IconButton(
-                    onPressed: onTapLike,
-                    icon: const Icon(Icons.favorite_border),
-                    splashRadius: 20,
-                  ),
-                  IconButton(
-                    onPressed: onTapChat,
-                    icon: const Icon(Icons.chat_bubble_outline),
-                    splashRadius: 20,
-                  ),
+                  IconButton(onPressed: onTapLike, icon: const Icon(Icons.favorite_border), splashRadius: 20),
+                  IconButton(onPressed: onTapChat, icon: const Icon(Icons.chat_bubble_outline), splashRadius: 20),
                   const Spacer(),
-                  IconButton(
-                    onPressed: onTapMore,
-                    icon: const Icon(Icons.more_horiz),
-                    splashRadius: 20,
-                  ),
+                  IconButton(onPressed: onTapMore, icon: const Icon(Icons.more_horiz), splashRadius: 20),
                 ],
               ),
             ],
@@ -894,6 +1183,147 @@ class _FeedPostItem extends StatelessWidget {
     );
   }
 }
+
+
+
+class _MyCommentsTab extends StatelessWidget {
+  final bool loading;
+  final String? error;
+  final List<Map<String, dynamic>> items;
+  final String Function(String raw) dateOnly;
+  final Future<void> Function() onRefresh;
+
+  final bool Function(Map<String, dynamic> c) isMine;
+  final void Function(dynamic postId) onTapGoPost;
+  final void Function(Map<String, dynamic> c) onEdit;
+  final void Function(Map<String, dynamic> c) onDelete;
+
+  const _MyCommentsTab({
+    required this.loading,
+    required this.error,
+    required this.items,
+    required this.dateOnly,
+    required this.onRefresh,
+    required this.isMine,
+    required this.onTapGoPost,
+    required this.onEdit,
+    required this.onDelete,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    if (loading) return const Center(child: CircularProgressIndicator());
+
+    if (error != null) {
+      return Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(error!),
+            const SizedBox(height: 12),
+            SizedBox(
+              width: double.infinity,
+              height: 44,
+              child: ElevatedButton(onPressed: onRefresh, child: const Text('다시 시도')),
+            ),
+          ],
+        ),
+      );
+    }
+
+    if (items.isEmpty) return const Center(child: Text('작성한 댓글이 없습니다.'));
+
+    return RefreshIndicator(
+      onRefresh: onRefresh,
+      child: ListView.separated(
+        padding: EdgeInsets.zero,
+        itemCount: items.length,
+        separatorBuilder: (_, __) => const Divider(height: 1, thickness: 1),
+        itemBuilder: (context, i) {
+          final c = items[i];
+
+          final commentId = (c['id'] ?? '').toString();
+          final postId = (c['post_id'] ?? '').toString();
+          final content = (c['content'] ?? '').toString();
+          final postTitle = (c['postTitle'] ?? '').toString();
+          final createdAt = dateOnly((c['createdAt'] ?? '').toString());
+
+          final mine = isMine(c);
+
+          return ListTile(
+            contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            title: Text(
+              content.isEmpty ? '(내용 없음)' : content,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(fontWeight: FontWeight.w700),
+            ),
+            subtitle: Padding(
+              padding: const EdgeInsets.only(top: 6),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  if (postTitle.trim().isNotEmpty)
+                    Text('게시글: $postTitle', maxLines: 1, overflow: TextOverflow.ellipsis,
+                        style: TextStyle(fontSize: 12, color: Colors.grey.shade700)),
+                  if (createdAt.isNotEmpty)
+                    Text(createdAt, style: TextStyle(fontSize: 12, color: Colors.grey.shade600)),
+                ],
+              ),
+            ),
+            trailing: IconButton(
+              icon: const Icon(Icons.more_horiz),
+              onPressed: () {
+                showModalBottomSheet(
+                  context: context,
+                  builder: (_) => SafeArea(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        ListTile(
+                          leading: const Icon(Icons.open_in_new),
+                          title: const Text('게시글로 이동'),
+                          onTap: () {
+                            Navigator.pop(context);
+                            if (postId.isNotEmpty) onTapGoPost(postId);
+                          },
+                        ),
+                        const Divider(height: 1),
+                        if (mine && commentId.isNotEmpty && postId.isNotEmpty) ...[
+                          ListTile(
+                            leading: const Icon(Icons.edit),
+                            title: const Text('댓글 수정'),
+                            onTap: () {
+                              Navigator.pop(context);
+                              onEdit(c);
+                            },
+                          ),
+                          ListTile(
+                            leading: const Icon(Icons.delete),
+                            title: const Text('댓글 삭제'),
+                            onTap: () {
+                              Navigator.pop(context);
+                              onDelete(c);
+                            },
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+                );
+              },
+            ),
+            onTap: () {
+              if (postId.isNotEmpty) onTapGoPost(postId);
+            },
+          );
+        },
+      ),
+    );
+  }
+}
+
 
 
 class _SimplePostList extends StatelessWidget {
